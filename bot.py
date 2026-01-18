@@ -39,6 +39,9 @@ DATA_FILE = os.path.join(os.getcwd(), "bot_data.json")
 # ID канала Hatch Egg
 HATCH_EGG_CHANNEL = "@hatch_egg"
 
+# Username бота для реферальных ссылок
+BOT_USERNAME = "hatchttestedbot"
+
 # Лимиты
 FREE_EGGS_PER_DAY = 10
 EGG_PACK_SIZE = 10  # Количество яиц в пакете
@@ -716,13 +719,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         try:
             # Создаем кнопки для ЛС сообщения
-            # Используем web_app с реферальной ссылкой отправителя яйца
-            referral_url = f"{MINI_APP_URL}?referral={sender_id}"
+            # Используем формат https://t.me/bot_username?startapp=sender_id для реферальной ссылки
+            referral_url = f"https://t.me/{BOT_USERNAME}?startapp={sender_id}"
             ls_keyboard = InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton(
                         "📱 Hatch App",
-                        web_app=WebAppInfo(url=referral_url)
+                        url=referral_url
                     ),
                     InlineKeyboardButton(
                         "Send 🥚",
@@ -771,13 +774,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.info(f"Multi egg {egg_key} updated: {hatched_count}/{max_hatches} hatched, {remaining} remaining")
             else:
                 # Если лимит достигнут, меняем эмодзи на 🐣 и добавляем кнопки
-                # Используем web_app с реферальной ссылкой отправителя яйца
-                referral_url = f"{MINI_APP_URL}?referral={sender_id}"
+                # Используем формат https://t.me/bot_username?startapp=sender_id для реферальной ссылки
+                referral_url = f"https://t.me/{BOT_USERNAME}?startapp={sender_id}"
                 keyboard = InlineKeyboardMarkup([
                     [
                         InlineKeyboardButton(
                             "📱 Hatch App",
-                            web_app=WebAppInfo(url=referral_url)
+                            url=referral_url
                         ),
                         InlineKeyboardButton(
                             "Send 🥚",
@@ -802,12 +805,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     ])
                     await query.edit_message_reply_markup(reply_markup=keyboard)
                 else:
-                    referral_url = f"{MINI_APP_URL}?referral={sender_id}"
+                    referral_url = f"https://t.me/{BOT_USERNAME}?startapp={sender_id}"
                     keyboard = InlineKeyboardMarkup([
                         [
                             InlineKeyboardButton(
                                 "📱 Hatch App",
-                                web_app=WebAppInfo(url=referral_url)
+                                url=referral_url
                             ),
                             InlineKeyboardButton(
                                 "Send 🥚",
@@ -825,13 +828,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info(f"Egg {egg_id} hatched by {clicker_id} (sent by {sender_id})")
         
         # Создаем кнопки для открытия mini app и отправки еще одного яйца
-        # Используем web_app с реферальной ссылкой отправителя яйца
-        referral_url = f"{MINI_APP_URL}?referral={sender_id}"
+        # Используем формат https://t.me/bot_username?startapp=sender_id для реферальной ссылки
+        referral_url = f"https://t.me/{BOT_USERNAME}?startapp={sender_id}"
         keyboard = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton(
                     "📱 Hatch App",
-                    web_app=WebAppInfo(url=referral_url)
+                    url=referral_url
                 ),
                 InlineKeyboardButton(
                     "Send 🥚",
