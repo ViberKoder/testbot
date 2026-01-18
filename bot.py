@@ -251,7 +251,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if user_id not in referrers and referrer_id != user_id:
                 referrers[user_id] = referrer_id
                 logger.info(f"User {user_id} became referral of {referrer_id} via startapp link (total referrers now: {len(referrers)})")
+                
+                # Подсчитываем количество рефералов для реферала, чтобы убедиться, что счетчик обновится
+                referrer_referrals_count = sum(1 for ref_user_id, ref_referrer_id in referrers.items() if ref_referrer_id == referrer_id)
+                logger.info(f"Referrer {referrer_id} now has {referrer_referrals_count} referrals")
+                
                 save_data()
+                
+                # Проверяем, что данные сохранились
+                logger.info(f"After save: referrers dict has {len(referrers)} entries, user {user_id} -> referrer {referrer_id}")
             elif user_id in referrers:
                 logger.info(f"User {user_id} already has referrer {referrers[user_id]}, ignoring startapp={referrer_id}")
             else:
@@ -966,6 +974,13 @@ async def stats_api(request):
     
     # Count referrals (users who have this user as referrer)
     referrals_count = sum(1 for ref_user_id, ref_referrer_id in referrers.items() if ref_referrer_id == user_id)
+    
+    # Логируем для отладки
+    logger.info(f"API stats for user {user_id}: referrals_count={referrals_count}, total_referrers_dict_size={len(referrers)}")
+    if referrals_count > 0:
+        # Показываем примеры рефералов
+        sample_referrals = [ref_user_id for ref_user_id, ref_referrer_id in referrers.items() if ref_referrer_id == user_id][:3]
+        logger.info(f"Sample referrals for user {user_id}: {sample_referrals}")
     
     # Calculate available eggs (10 free per day + paid eggs - sent today)
     # Paid eggs сохраняются между днями, сбрасывается только daily_sent
