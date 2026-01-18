@@ -241,10 +241,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     my_eggs_hatched = user_eggs_hatched_by_others.get(user_id, 0)
     
     # Создаем кнопку для открытия mini app
+    # В команде /start нет реферальной ссылки, так как пользователь сам открывает бота
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton(
             "📊 View Stats",
-            url="https://t.me/ToHatchBot/app"
+            web_app=WebAppInfo(url=MINI_APP_URL)
         )]
     ])
     
@@ -544,6 +545,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_multi_egg and max_hatches == 1:
         max_hatches = egg_info.get('max_hatches', 50)  # Дефолт для старых multi eggs
     
+    logger.info(f"Egg type check: is_multi={is_multi}, is_multi_egg={is_multi_egg}, max_hatches={max_hatches}, egg_key={egg_key}")
+    
     # ВАЖНО: Проверяем, не пытается ли отправитель вылупить свое яйцо
     # Это должно быть ПЕРЕД любым изменением сообщения
     if clicker_id == sender_id:
@@ -695,10 +698,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Для multi egg показываем прогресс во всплывающем уведомлении и отправляем ЛС
     if is_multi_egg:
-        # Получаем актуальные данные после обновления
+        # Получаем актуальные данные после обновления (уже обновлены выше в строках 571-574)
+        # ВАЖНО: данные уже обновлены, поэтому hatched_count уже увеличен на 1
         multi_egg_data = multi_eggs.get(egg_key, {'hatched_count': 0, 'hatched_by_list': []})
         hatched_count = multi_egg_data['hatched_count']
         remaining = max_hatches - hatched_count
+        
+        logger.info(f"Multi egg {egg_key}: hatched_count={hatched_count}, max_hatches={max_hatches}, remaining={remaining}, clicker_id={clicker_id}")
         
         # Показываем прогресс во всплывающем уведомлении
         answer_text = f"{hatched_count}/{max_hatches}"
@@ -710,11 +716,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         try:
             # Создаем кнопки для ЛС сообщения
+            # Используем web_app с реферальной ссылкой отправителя яйца
+            referral_url = f"{MINI_APP_URL}?referral={sender_id}"
             ls_keyboard = InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton(
                         "📱 Hatch App",
-                        url="https://t.me/ToHatchBot/app"
+                        web_app=WebAppInfo(url=referral_url)
                     ),
                     InlineKeyboardButton(
                         "Send 🥚",
@@ -760,13 +768,16 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ])
                 # Сообщение остается просто с яйцом, не меняем текст
                 await query.edit_message_reply_markup(reply_markup=keyboard)
+                logger.info(f"Multi egg {egg_key} updated: {hatched_count}/{max_hatches} hatched, {remaining} remaining")
             else:
                 # Если лимит достигнут, меняем эмодзи на 🐣 и добавляем кнопки
+                # Используем web_app с реферальной ссылкой отправителя яйца
+                referral_url = f"{MINI_APP_URL}?referral={sender_id}"
                 keyboard = InlineKeyboardMarkup([
                     [
                         InlineKeyboardButton(
                             "📱 Hatch App",
-                            url="https://t.me/ToHatchBot/app"
+                            web_app=WebAppInfo(url=referral_url)
                         ),
                         InlineKeyboardButton(
                             "Send 🥚",
@@ -779,20 +790,48 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "🐣",
                     reply_markup=keyboard
                 )
-                logger.info(f"Multi egg {egg_key} completed ({hatched_count}/{max_hatches}), changed emoji to 🐣")
+                logger.info(f"Multi egg {egg_key} completed ({hatched_count}/{max_hatches}), changed emoji to 🐣 with buttons")
         except Exception as e:
             logger.error(f"Error updating multi egg message: {e}", exc_info=True)
+            # Пытаемся хотя бы обновить reply_markup
+            try:
+                if remaining > 0:
+                    button_text = f"🥚 Hatch ({hatched_count}/{max_hatches})"
+                    keyboard = InlineKeyboardMarkup([
+                        [InlineKeyboardButton(button_text, callback_data=query.data)]
+                    ])
+                    await query.edit_message_reply_markup(reply_markup=keyboard)
+                else:
+                    referral_url = f"{MINI_APP_URL}?referral={sender_id}"
+                    keyboard = InlineKeyboardMarkup([
+                        [
+                            InlineKeyboardButton(
+                                "📱 Hatch App",
+                                web_app=WebAppInfo(url=referral_url)
+                            ),
+                            InlineKeyboardButton(
+                                "Send 🥚",
+                                switch_inline_query_current_chat="egg"
+                            )
+                        ]
+                    ])
+                    await query.edit_message_reply_markup(reply_markup=keyboard)
+            except Exception as e2:
+                logger.error(f"Error updating multi egg reply_markup: {e2}", exc_info=True)
     else:
+        # Обычное яйцо - вылуплено
         await query.answer("🐣 Hatching egg...")
         
         logger.info(f"Egg {egg_id} hatched by {clicker_id} (sent by {sender_id})")
         
         # Создаем кнопки для открытия mini app и отправки еще одного яйца
+        # Используем web_app с реферальной ссылкой отправителя яйца
+        referral_url = f"{MINI_APP_URL}?referral={sender_id}"
         keyboard = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton(
                     "📱 Hatch App",
-                    url="https://t.me/ToHatchBot/app"
+                    web_app=WebAppInfo(url=referral_url)
                 ),
                 InlineKeyboardButton(
                     "Send 🥚",
@@ -807,15 +846,24 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "🐣",
                 reply_markup=keyboard
             )
+            logger.info(f"Successfully updated egg message to 🐣 with buttons for egg {egg_key}")
         except Exception as e:
-            logger.error(f"Error editing message: {e}")
-            # Если не удалось отредактировать, пробуем без кнопок
+            logger.error(f"Error editing message: {e}", exc_info=True)
+            # Если не удалось отредактировать текст, пробуем только reply_markup
             try:
-                await query.edit_message_text("🐣")
+                await query.edit_message_reply_markup(reply_markup=keyboard)
+                logger.info(f"Updated reply_markup only for egg {egg_key}")
             except Exception as e2:
-                logger.error(f"Error editing message without buttons: {e2}")
-                # Если и это не работает, просто отвечаем
-                await query.answer("🐣 Egg hatched!", show_alert=False)
+                logger.error(f"Error updating reply_markup: {e2}", exc_info=True)
+                # Если и это не работает, пробуем отредактировать только текст
+                try:
+                    await query.edit_message_text("🐣")
+                    # Затем добавляем кнопки отдельно
+                    await query.edit_message_reply_markup(reply_markup=keyboard)
+                except Exception as e3:
+                    logger.error(f"Error editing message text and reply_markup: {e3}", exc_info=True)
+                    # Если и это не работает, просто отвечаем
+                    await query.answer("🐣 Egg hatched!", show_alert=False)
 
 
 async def chat_member_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
