@@ -1571,6 +1571,9 @@ def main():
             # Добавляем роут для сброса данных (только для тестирования)
             app.router.add_post('/api/reset', reset_data_api)
             app.router.add_get('/api/reset', reset_data_api)  # Также через GET для удобства
+            # Добавляем роут для установки реферала из Mini App
+            app.router.add_post('/api/referral/set', set_referral_api)
+            app.router.add_options('/api/referral/set', set_referral_api)
             runner = web.AppRunner(app)
             await runner.setup()
             site = web.TCPSite(runner, '0.0.0.0', port)
