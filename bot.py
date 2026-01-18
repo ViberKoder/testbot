@@ -657,39 +657,82 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_data()
     logger.info(f"After save: {len(egg_points)} users with points, {len(referrers)} referrers")
     
-    await query.answer("🐣 Hatching egg...")
-    
-    logger.info(f"Egg {egg_id} hatched by {clicker_id} (sent by {sender_id})")
-    
-    # Создаем кнопки для открытия mini app и отправки еще одного яйца
-    keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton(
-                "📱 Hatch App",
-                url="https://t.me/ToHatchBot/app"
-            ),
-            InlineKeyboardButton(
-                "Send 🥚",
-                switch_inline_query_current_chat="egg"
-            )
-        ]
-    ])
-    
-    # Меняем 🥚 на 🐣 и добавляем кнопки
-    try:
-        await query.edit_message_text(
-            "🐣",
-            reply_markup=keyboard
-        )
-    except Exception as e:
-        logger.error(f"Error editing message: {e}")
-        # Если не удалось отредактировать, пробуем без кнопок
+    # Для multi egg показываем количество вылуплений
+    if is_multi_egg:
+        multi_egg_data = multi_eggs.get(egg_key, {'hatched_count': 0})
+        hatched_count = multi_egg_data['hatched_count']
+        remaining = max_hatches - hatched_count
+        answer_text = f"🐣 Multi egg hatched! ({hatched_count}/{max_hatches}, {remaining} left)"
+        await query.answer(answer_text)
+        
+        # Обновляем сообщение с прогрессом для multi egg
         try:
-            await query.edit_message_text("🐣")
-        except Exception as e2:
-            logger.error(f"Error editing message without buttons: {e2}")
-            # Если и это не работает, просто отвечаем
-            await query.answer("🐣 Egg hatched!", show_alert=False)
+            if remaining > 0:
+                # Если еще можно вылупить, оставляем кнопку с обновленным текстом
+                button_text = f"🥚🥚 Hatch Multi Egg ({hatched_count}/{max_hatches})"
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton(button_text, callback_data=query.data)]
+                ])
+                message_text = f"🥚🥚\n\nMulti Egg: {hatched_count}/{max_hatches} hatched"
+                await query.edit_message_text(
+                    message_text,
+                    reply_markup=keyboard
+                )
+            else:
+                # Если лимит достигнут, показываем кнопки для mini app
+                keyboard = InlineKeyboardMarkup([
+                    [
+                        InlineKeyboardButton(
+                            "📱 Hatch App",
+                            url="https://t.me/ToHatchBot/app"
+                        ),
+                        InlineKeyboardButton(
+                            "Send 🥚",
+                            switch_inline_query_current_chat="egg"
+                        )
+                    ]
+                ])
+                message_text = f"🥚🥚\n\nMulti Egg: {hatched_count}/{max_hatches} hatched (Complete!)"
+                await query.edit_message_text(
+                    message_text,
+                    reply_markup=keyboard
+                )
+        except Exception as e:
+            logger.error(f"Error editing multi egg message: {e}")
+    else:
+        await query.answer("🐣 Hatching egg...")
+        
+        logger.info(f"Egg {egg_id} hatched by {clicker_id} (sent by {sender_id})")
+        
+        # Создаем кнопки для открытия mini app и отправки еще одного яйца
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(
+                    "📱 Hatch App",
+                    url="https://t.me/ToHatchBot/app"
+                ),
+                InlineKeyboardButton(
+                    "Send 🥚",
+                    switch_inline_query_current_chat="egg"
+                )
+            ]
+        ])
+        
+        # Меняем 🥚 на 🐣 и добавляем кнопки
+        try:
+            await query.edit_message_text(
+                "🐣",
+                reply_markup=keyboard
+            )
+        except Exception as e:
+            logger.error(f"Error editing message: {e}")
+            # Если не удалось отредактировать, пробуем без кнопок
+            try:
+                await query.edit_message_text("🐣")
+            except Exception as e2:
+                logger.error(f"Error editing message without buttons: {e2}")
+                # Если и это не работает, просто отвечаем
+                await query.answer("🐣 Egg hatched!", show_alert=False)
 
 
 async def chat_member_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
