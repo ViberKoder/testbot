@@ -239,6 +239,26 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /start"""
     user_id = update.message.from_user.id
     
+    # Обрабатываем параметр startapp из ссылки https://t.me/bot?startapp=referrer_id
+    # Когда пользователь переходит по ссылке, бот получает команду /start referrer_id
+    if context.args and len(context.args) > 0:
+        try:
+            referrer_id = int(context.args[0])
+            
+            # Устанавливаем реферала только если:
+            # 1. У пользователя еще нет реферала
+            # 2. Реферал не является самим пользователем
+            if user_id not in referrers and referrer_id != user_id:
+                referrers[user_id] = referrer_id
+                logger.info(f"User {user_id} became referral of {referrer_id} via startapp link (total referrers now: {len(referrers)})")
+                save_data()
+            elif user_id in referrers:
+                logger.info(f"User {user_id} already has referrer {referrers[user_id]}, ignoring startapp={referrer_id}")
+            else:
+                logger.info(f"User {user_id} tried to set themselves as referrer via startapp, ignoring")
+        except ValueError:
+            logger.warning(f"Invalid referrer_id in startapp parameter: {context.args[0]}")
+    
     # Получаем статистику пользователя
     hatched_count = eggs_hatched_by_user.get(user_id, 0)
     my_eggs_hatched = user_eggs_hatched_by_others.get(user_id, 0)
