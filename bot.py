@@ -1479,6 +1479,9 @@ def main():
             setup_eggchain_routes(app)
             # Добавляем роут для чтения логов
             app.router.add_get('/api/logs', get_logs_api)
+            # Добавляем роут для сброса данных (только для тестирования)
+            app.router.add_post('/api/reset', reset_data_api)
+            app.router.add_get('/api/reset', reset_data_api)  # Также через GET для удобства
             runner = web.AppRunner(app)
             await runner.setup()
             site = web.TCPSite(runner, '0.0.0.0', port)
