@@ -73,16 +73,65 @@ def load_data():
                 referrers_count = len(data.get('referrers', {}))
                 logger.info(f"Loaded data: {egg_points_count} users with points, {referrers_count} referrers")
                 
+                # Конвертируем ключи словарей в int (JSON сохраняет ключи как строки)
+                referrers_raw = data.get('referrers', {})
+                referrers_converted = {}
+                for key, value in referrers_raw.items():
+                    try:
+                        referrers_converted[int(key)] = int(value)
+                    except (ValueError, TypeError):
+                        logger.warning(f"Invalid referrer entry: {key} -> {value}, skipping")
+                
+                egg_points_raw = data.get('egg_points', {})
+                egg_points_converted = {}
+                for key, value in egg_points_raw.items():
+                    try:
+                        egg_points_converted[int(key)] = int(value)
+                    except (ValueError, TypeError):
+                        logger.warning(f"Invalid egg_points entry: {key} -> {value}, skipping")
+                
+                eggs_hatched_by_user_raw = data.get('eggs_hatched_by_user', {})
+                eggs_hatched_by_user_converted = {}
+                for key, value in eggs_hatched_by_user_raw.items():
+                    try:
+                        eggs_hatched_by_user_converted[int(key)] = int(value)
+                    except (ValueError, TypeError):
+                        logger.warning(f"Invalid eggs_hatched_by_user entry: {key} -> {value}, skipping")
+                
+                user_eggs_hatched_by_others_raw = data.get('user_eggs_hatched_by_others', {})
+                user_eggs_hatched_by_others_converted = {}
+                for key, value in user_eggs_hatched_by_others_raw.items():
+                    try:
+                        user_eggs_hatched_by_others_converted[int(key)] = int(value)
+                    except (ValueError, TypeError):
+                        logger.warning(f"Invalid user_eggs_hatched_by_others entry: {key} -> {value}, skipping")
+                
+                eggs_sent_by_user_raw = data.get('eggs_sent_by_user', {})
+                eggs_sent_by_user_converted = {}
+                for key, value in eggs_sent_by_user_raw.items():
+                    try:
+                        eggs_sent_by_user_converted[int(key)] = int(value)
+                    except (ValueError, TypeError):
+                        logger.warning(f"Invalid eggs_sent_by_user entry: {key} -> {value}, skipping")
+                
+                referral_earnings_raw = data.get('referral_earnings', {})
+                referral_earnings_converted = {}
+                for key, value in referral_earnings_raw.items():
+                    try:
+                        referral_earnings_converted[int(key)] = int(value)
+                    except (ValueError, TypeError):
+                        logger.warning(f"Invalid referral_earnings entry: {key} -> {value}, skipping")
+                
                 return {
                     'hatched_eggs': set(data.get('hatched_eggs', [])),
-                    'eggs_hatched_by_user': data.get('eggs_hatched_by_user', {}),
-                    'user_eggs_hatched_by_others': data.get('user_eggs_hatched_by_others', {}),
-                    'eggs_sent_by_user': data.get('eggs_sent_by_user', {}),
+                    'eggs_hatched_by_user': eggs_hatched_by_user_converted,
+                    'user_eggs_hatched_by_others': user_eggs_hatched_by_others_converted,
+                    'eggs_sent_by_user': eggs_sent_by_user_converted,
                     'daily_eggs_sent': data.get('daily_eggs_sent', {}),  # {user_id: {'date': '2024-01-01', 'count': 5}}
-                    'egg_points': data.get('egg_points', {}),
+                    'egg_points': egg_points_converted,
                     'completed_tasks': data.get('completed_tasks', {}),
-                    'referrers': data.get('referrers', {}),  # {user_id: referrer_id} - кто привел пользователя
-                    'referral_earnings': data.get('referral_earnings', {}),  # {referrer_id: total_earned} - сколько заработал рефовод
+                    'referrers': referrers_converted,  # {user_id: referrer_id} - кто привел пользователя
+                    'referral_earnings': referral_earnings_converted,  # {referrer_id: total_earned} - сколько заработал рефовод
                     'ton_payments': data.get('ton_payments', {}),  # {user_id: [{'date': '2024-01-01', 'amount': 0.1, 'tx_hash': '...'}]}
                     'eggs_detail': data.get('eggs_detail', {}),  # {egg_key: {sender_id, egg_id, hatched_by, timestamp_sent, timestamp_hatched, is_multi, max_hatches, hatched_count, hatched_by_list}}
                     'multi_eggs': data.get('multi_eggs', {})  # {egg_key: {hatched_by_list: [user_id1, user_id2, ...], hatched_count: int}}
