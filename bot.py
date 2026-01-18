@@ -287,10 +287,12 @@ def add_paid_eggs(user_id, amount):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /start"""
     user_id = update.message.from_user.id
+    logger.info(f"=== START COMMAND RECEIVED === User ID: {user_id}, Args: {context.args}")
     
     # Обрабатываем параметр startapp из ссылки https://t.me/bot?startapp=referrer_id
     # Когда пользователь переходит по ссылке, бот получает команду /start referrer_id
     if context.args and len(context.args) > 0:
+        logger.info(f"START with args: {context.args}, first arg: {context.args[0]}")
         try:
             referrer_id = int(context.args[0])
             
@@ -1014,7 +1016,9 @@ async def chat_member_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def stats_api(request):
     """API endpoint для получения статистики"""
     # Добавляем CORS headers
+    logger.info(f"=== STATS API CALLED === Query params: {dict(request.query)}")
     user_id = request.query.get('user_id')
+    logger.info(f"Stats API: user_id from query = {user_id}")
     if not user_id:
         return web.json_response(
             {'error': 'user_id required'}, 
@@ -1042,29 +1046,38 @@ async def stats_api(request):
     # Count referrals (users who have this user as referrer)
     # Убеждаемся, что user_id - это int для правильного сравнения
     user_id_int = int(user_id)
+    logger.info(f"=== COUNTING REFERRALS === For user_id: {user_id_int}, referrers dict size: {len(referrers)}")
     
     # Подсчитываем рефералов - ищем всех пользователей, у которых referrer_id == user_id
     referrals_list = []
+    logger.info(f"Referrers dict items (first 5): {list(referrers.items())[:5]}")
+    
     for ref_user_id, ref_referrer_id in referrers.items():
         # Убеждаемся, что оба значения - int
         try:
+            ref_user_id_int = int(ref_user_id)
             ref_referrer_id_int = int(ref_referrer_id)
+            logger.debug(f"Checking: ref_user_id={ref_user_id_int} (type: {type(ref_user_id)}), ref_referrer_id={ref_referrer_id_int} (type: {type(ref_referrer_id)}), target={user_id_int}")
+            
             if ref_referrer_id_int == user_id_int:
-                referrals_list.append(int(ref_user_id))
+                referrals_list.append(ref_user_id_int)
+                logger.info(f"FOUND REFERRAL: {ref_user_id_int} -> {ref_referrer_id_int} (matches target {user_id_int})")
         except (ValueError, TypeError) as e:
-            logger.warning(f"Invalid referrer entry in dict: {ref_user_id} -> {ref_referrer_id}, error: {e}")
+            logger.warning(f"Invalid referrer entry in dict: {ref_user_id} (type: {type(ref_user_id)}) -> {ref_referrer_id} (type: {type(ref_referrer_id)}), error: {e}")
             continue
     
     referrals_count = len(referrals_list)
     
     # Логируем для отладки
-    logger.info(f"API stats for user {user_id_int} (type: {type(user_id_int)}): referrals_count={referrals_count}, total_referrers_dict_size={len(referrers)}")
+    logger.info(f"=== REFERRALS COUNT RESULT === User {user_id_int}: referrals_count={referrals_count}, referrals_list={referrals_list}")
     if referrals_count > 0:
         # Показываем примеры рефералов
         logger.info(f"Sample referrals for user {user_id_int}: {referrals_list[:5]}")
     else:
         # Если рефералов нет, показываем все записи для отладки
-        logger.info(f"No referrals found for user {user_id_int}. All referrers dict: {list(referrers.items())[:10]}")
+        logger.warning(f"NO REFERRALS FOUND for user {user_id_int}. Showing all referrers dict entries:")
+        for idx, (ref_user_id, ref_referrer_id) in enumerate(list(referrers.items())[:20]):
+            logger.warning(f"  [{idx}] {ref_user_id} (type: {type(ref_user_id)}) -> {ref_referrer_id} (type: {type(ref_referrer_id)})")
     
     # Calculate available eggs (10 free per day + paid eggs - sent today)
     # Paid eggs сохраняются между днями, сбрасывается только daily_sent
