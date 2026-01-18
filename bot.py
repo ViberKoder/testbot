@@ -714,8 +714,16 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # РЕФЕРАЛЬНАЯ СИСТЕМА: Если clicker_id еще не имеет реферала, устанавливаем sender_id как его реферала
     # Когда кто-то открывает яйцо, он становится рефералом того, кто отправил яйцо
     if clicker_id not in referrers and sender_id != clicker_id:
-        referrers[clicker_id] = sender_id
-        logger.info(f"User {clicker_id} became referral of {sender_id} (total referrers now: {len(referrers)})")
+        # Убеждаемся, что оба ID - int
+        clicker_id_int = int(clicker_id)
+        sender_id_int = int(sender_id)
+        
+        referrers[clicker_id_int] = sender_id_int
+        logger.info(f"User {clicker_id_int} became referral of {sender_id_int} via egg hatching (total referrers now: {len(referrers)})")
+        
+        # Проверяем подсчет рефералов для отправителя
+        sender_referrals_count = sum(1 for ref_user_id, ref_referrer_id in referrers.items() if int(ref_referrer_id) == sender_id_int)
+        logger.info(f"Sender {sender_id_int} now has {sender_referrals_count} referrals")
     
     # Обновляем статистику
     # Увеличиваем счетчик для того, кто вылупил
