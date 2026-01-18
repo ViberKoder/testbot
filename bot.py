@@ -1317,6 +1317,95 @@ async def verify_ton_payment_api(request):
     )
 
 
+async def set_referral_api(request):
+    """API endpoint для установки реферала (вызывается из Mini App)"""
+    # Добавляем CORS headers
+    if request.method == 'OPTIONS':
+        return web.Response(
+            status=200,
+            headers={
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, Accept',
+                'Access-Control-Max-Age': '3600'
+            }
+        )
+    
+    try:
+        data = await request.json()
+    except Exception as e:
+        return web.json_response(
+            {'error': 'invalid json'}, 
+            status=400,
+            headers={'Access-Control-Allow-Origin': '*'}
+        )
+    
+    user_id = data.get('user_id')
+    referrer_id = data.get('referrer_id')
+    
+    if not user_id or not referrer_id:
+        return web.json_response(
+            {'error': 'user_id and referrer_id required'}, 
+            status=400,
+            headers={'Access-Control-Allow-Origin': '*'}
+        )
+    
+    try:
+        user_id = int(user_id)
+        referrer_id = int(referrer_id)
+    except (ValueError, TypeError):
+        return web.json_response(
+            {'error': 'invalid user_id or referrer_id'}, 
+            status=400,
+            headers={'Access-Control-Allow-Origin': '*'}
+        )
+    
+    # Устанавливаем реферала только если:
+    # 1. У пользователя еще нет реферала
+    # 2. Реферал не является самим пользователем
+    if user_id in referrers:
+        existing_referrer = referrers[user_id]
+        logger.info(f"User {user_id} already has referrer {existing_referrer}, ignoring request to set {referrer_id}")
+        return web.json_response(
+            {
+                'success': False,
+                'existing_referrer': existing_referrer,
+                'message': 'User already has a referrer'
+            },
+            headers={'Access-Control-Allow-Origin': '*'}
+        )
+    
+    if referrer_id == user_id:
+        logger.warning(f"User {user_id} tried to set themselves as referrer")
+        return web.json_response(
+            {
+                'success': False,
+                'error': 'Cannot set yourself as referrer'
+            },
+            status=400,
+            headers={'Access-Control-Allow-Origin': '*'}
+        )
+    
+    # Устанавливаем реферала
+    referrers[user_id] = referrer_id
+    logger.info(f"User {user_id} became referral of {referrer_id} via API (total referrers now: {len(referrers)})")
+    
+    # Сохраняем данные
+    save_data()
+    
+    # Подсчитываем количество рефералов для реферала
+    referrer_referrals_count = sum(1 for ref_user_id, ref_referrer_id in referrers.items() if int(ref_referrer_id) == referrer_id)
+    logger.info(f"Referrer {referrer_id} now has {referrer_referrals_count} referrals")
+    
+    return web.json_response(
+        {
+            'success': True,
+            'message': f'Referrer set successfully. Referrer now has {referrer_referrals_count} referrals'
+        },
+        headers={'Access-Control-Allow-Origin': '*'}
+    )
+
+
 async def reset_data_api(request):
     """API endpoint для сброса всех данных (только для тестирования)"""
     # Добавляем CORS headers
