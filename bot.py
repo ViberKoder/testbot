@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from telegram import (
     InlineQueryResultArticle, 
     InputTextMessageContent, 
@@ -704,7 +705,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer(answer_text)
         
         # Отправляем личное сообщение пользователю, который вылупил яйцо
-        # Делаем это ДО обновления сообщения, чтобы гарантировать отправку
+        # Используем asyncio для небольшой задержки, чтобы убедиться, что callback обработан
+        await asyncio.sleep(0.1)  # Небольшая задержка 100ms
+        
         try:
             # Создаем кнопки для ЛС сообщения
             ls_keyboard = InlineKeyboardMarkup([
@@ -720,14 +723,32 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ]
             ])
             
-            await context.bot.send_message(
+            logger.info(f"Attempting to send personal message to user {clicker_id} after hatching multi egg {egg_key} ({hatched_count}/{max_hatches})")
+            
+            # Пытаемся отправить сообщение
+            # Используем parse_mode=None и disable_notification=False для надежности
+            sent_message = await context.bot.send_message(
                 chat_id=clicker_id,
                 text="🐣",
-                reply_markup=ls_keyboard
+                reply_markup=ls_keyboard,
+                disable_notification=False
             )
-            logger.info(f"Sent personal message to user {clicker_id} after hatching multi egg {egg_key} ({hatched_count}/{max_hatches})")
+            
+            if sent_message:
+                logger.info(f"Successfully sent personal message to user {clicker_id} (message_id: {sent_message.message_id})")
+            else:
+                logger.warning(f"send_message returned None for user {clicker_id}")
+                
         except Exception as e:
-            logger.error(f"Failed to send personal message to user {clicker_id}: {e}", exc_info=True)
+            error_msg = str(e)
+            error_type = type(e).__name__
+            logger.error(f"Failed to send personal message to user {clicker_id}: {error_type}: {error_msg}", exc_info=True)
+            
+            # Если это ошибка "bot blocked by user" или "chat not found", логируем отдельно
+            if "chat not found" in error_msg.lower() or "bot was blocked" in error_msg.lower() or "forbidden" in error_msg.lower() or "user is deactivated" in error_msg.lower():
+                logger.warning(f"User {clicker_id} has not started a conversation with the bot, blocked it, or account is deactivated. Cannot send DM.")
+            else:
+                logger.error(f"Unexpected error when sending message to user {clicker_id}: {error_msg}")
         
         # Обновляем сообщение в чате
         try:
