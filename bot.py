@@ -298,17 +298,27 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # 1. У пользователя еще нет реферала
             # 2. Реферал не является самим пользователем
             if user_id not in referrers and referrer_id != user_id:
-                referrers[user_id] = referrer_id
-                logger.info(f"User {user_id} became referral of {referrer_id} via startapp link (total referrers now: {len(referrers)})")
+                # Убеждаемся, что оба ID - int
+                user_id_int = int(user_id)
+                referrer_id_int = int(referrer_id)
+                
+                referrers[user_id_int] = referrer_id_int
+                logger.info(f"User {user_id_int} became referral of {referrer_id_int} via startapp link (total referrers now: {len(referrers)})")
                 
                 # Подсчитываем количество рефералов для реферала, чтобы убедиться, что счетчик обновится
-                referrer_referrals_count = sum(1 for ref_user_id, ref_referrer_id in referrers.items() if ref_referrer_id == referrer_id)
-                logger.info(f"Referrer {referrer_id} now has {referrer_referrals_count} referrals")
+                referrer_referrals_count = sum(1 for ref_user_id, ref_referrer_id in referrers.items() if int(ref_referrer_id) == referrer_id_int)
+                logger.info(f"Referrer {referrer_id_int} now has {referrer_referrals_count} referrals (verified in memory)")
                 
+                # Сохраняем данные
                 save_data()
                 
-                # Проверяем, что данные сохранились
-                logger.info(f"After save: referrers dict has {len(referrers)} entries, user {user_id} -> referrer {referrer_id}")
+                # Проверяем, что данные сохранились в памяти
+                logger.info(f"After save: referrers dict has {len(referrers)} entries")
+                logger.info(f"Verification: referrers.get({user_id_int}) = {referrers.get(user_id_int)}")
+                
+                # Проверяем подсчет еще раз после сохранения
+                referrer_referrals_count_after = sum(1 for ref_user_id, ref_referrer_id in referrers.items() if int(ref_referrer_id) == referrer_id_int)
+                logger.info(f"Referrer {referrer_id_int} referrals count after save: {referrer_referrals_count_after}")
             elif user_id in referrers:
                 logger.info(f"User {user_id} already has referrer {referrers[user_id]}, ignoring startapp={referrer_id}")
             else:
