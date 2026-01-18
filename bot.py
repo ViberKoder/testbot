@@ -1317,6 +1317,49 @@ async def verify_ton_payment_api(request):
     )
 
 
+async def reset_data_api(request):
+    """API endpoint для сброса всех данных (только для тестирования)"""
+    # Добавляем CORS headers
+    logger.warning("=== RESET DATA API CALLED ===")
+    
+    try:
+        # Полностью обнуляем все счетчики
+        egg_points.clear()
+        eggs_sent_by_user.clear()
+        daily_eggs_sent.clear()
+        eggs_hatched_by_user.clear()
+        user_eggs_hatched_by_others.clear()
+        hatched_eggs.clear()
+        referral_earnings.clear()
+        completed_tasks.clear()
+        referrers.clear()  # Сбрасываем рефералов
+        eggs_detail.clear()
+        multi_eggs.clear()
+        
+        # Сохраняем изменения
+        save_data()
+        
+        logger.warning("All data has been reset via API")
+        
+        return web.json_response(
+            {
+                'success': True,
+                'message': 'All data has been reset successfully'
+            },
+            headers={'Access-Control-Allow-Origin': '*'}
+        )
+    except Exception as e:
+        logger.error(f"Error resetting data: {e}", exc_info=True)
+        return web.json_response(
+            {
+                'success': False,
+                'error': str(e)
+            },
+            status=500,
+            headers={'Access-Control-Allow-Origin': '*'}
+        )
+
+
 async def get_logs_api(request):
     """API endpoint для получения последних логов"""
     # Добавляем CORS headers
