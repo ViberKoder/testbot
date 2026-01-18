@@ -668,19 +668,73 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_data()
     logger.info(f"After save: {len(egg_points)} users with points, {len(referrers)} referrers")
     
-    # Для multi egg показываем индивидуальный результат каждому пользователю
-    # НЕ обновляем сообщение, чтобы каждый пользователь видел свое состояние
+    # Для multi egg показываем количество вылуплений и отправляем ЛС каждому вылупившему
     if is_multi_egg:
         multi_egg_data = multi_eggs.get(egg_key, {'hatched_count': 0})
         hatched_count = multi_egg_data['hatched_count']
         remaining = max_hatches - hatched_count
+        answer_text = f"🐣 Multi egg hatched! ({hatched_count}/{max_hatches}, {remaining} left)"
+        await query.answer(answer_text)
         
-        # Показываем индивидуальный результат пользователю
-        answer_text = f"🐣 You hatched this multi egg! ({hatched_count}/{max_hatches} total hatches, {remaining} left)"
-        await query.answer(answer_text, show_alert=True)
+        # Отправляем личное сообщение пользователю, который вылупил яйцо
+        try:
+            # Создаем кнопки для ЛС сообщения
+            ls_keyboard = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(
+                        "📱 Hatch App",
+                        url="https://t.me/ToHatchBot/app"
+                    ),
+                    InlineKeyboardButton(
+                        "Send 🥚",
+                        switch_inline_query_current_chat="egg"
+                    )
+                ]
+            ])
+            
+            await context.bot.send_message(
+                chat_id=clicker_id,
+                text="🐣",
+                reply_markup=ls_keyboard
+            )
+            logger.info(f"Sent personal message to user {clicker_id} after hatching multi egg {egg_key}")
+        except Exception as e:
+            logger.error(f"Failed to send personal message to user {clicker_id}: {e}")
         
-        # НЕ обновляем сообщение - оно остается с кнопкой для других пользователей
-        # Каждый пользователь видит свое состояние через уведомление
+        # Обновляем сообщение с прогрессом для multi egg
+        try:
+            if remaining > 0:
+                # Если еще можно вылупить, оставляем кнопку с обновленным текстом
+                button_text = f"🥚🥚 Hatch Multi Egg ({hatched_count}/{max_hatches})"
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton(button_text, callback_data=query.data)]
+                ])
+                message_text = f"🥚🥚\n\nMulti Egg: {hatched_count}/{max_hatches} hatched"
+                await query.edit_message_text(
+                    message_text,
+                    reply_markup=keyboard
+                )
+            else:
+                # Если лимит достигнут, показываем кнопки для mini app
+                keyboard = InlineKeyboardMarkup([
+                    [
+                        InlineKeyboardButton(
+                            "📱 Hatch App",
+                            url="https://t.me/ToHatchBot/app"
+                        ),
+                        InlineKeyboardButton(
+                            "Send 🥚",
+                            switch_inline_query_current_chat="egg"
+                        )
+                    ]
+                ])
+                message_text = f"🥚🥚\n\nMulti Egg: {hatched_count}/{max_hatches} hatched (Complete!)"
+                await query.edit_message_text(
+                    message_text,
+                    reply_markup=keyboard
+                )
+        except Exception as e:
+            logger.error(f"Error editing multi egg message: {e}")
     else:
         await query.answer("🐣 Hatching egg...")
         
