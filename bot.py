@@ -20,11 +20,28 @@ import aiohttp
 from eggchain_api import setup_eggchain_routes, set_bot_instance
 
 # Настройка логирования
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+# Создаем форматтер
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+# Настройка логирования в консоль
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(formatter)
+console_handler.setLevel(logging.INFO)
+
+# Настройка логирования в файл
+log_file = os.path.join(os.getcwd(), "bot.log")
+file_handler = logging.FileHandler(log_file, encoding='utf-8')
+file_handler.setFormatter(formatter)
+file_handler.setLevel(logging.INFO)
+
+# Настраиваем root logger
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+root_logger.addHandler(console_handler)
+root_logger.addHandler(file_handler)
+
 logger = logging.getLogger(__name__)
+logger.info(f"Logging initialized. Log file: {log_file}")
 
 # Токен бота - получаем из переменной окружения
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
@@ -1298,6 +1315,49 @@ async def verify_ton_payment_api(request):
         },
         headers={'Access-Control-Allow-Origin': '*'}
     )
+
+
+async def get_logs_api(request):
+    """API endpoint для получения последних логов"""
+    # Добавляем CORS headers
+    lines = request.query.get('lines', '100')  # По умолчанию последние 100 строк
+    try:
+        lines = int(lines)
+        if lines > 1000:
+            lines = 1000  # Максимум 1000 строк
+    except ValueError:
+        lines = 100
+    
+    log_file = os.path.join(os.getcwd(), "bot.log")
+    
+    try:
+        if os.path.exists(log_file):
+            with open(log_file, 'r', encoding='utf-8') as f:
+                all_lines = f.readlines()
+                # Берем последние N строк
+                last_lines = all_lines[-lines:] if len(all_lines) > lines else all_lines
+                logs_text = ''.join(last_lines)
+        else:
+            logs_text = "Log file not found"
+        
+        return web.json_response(
+            {
+                'success': True,
+                'lines': len(last_lines) if os.path.exists(log_file) else 0,
+                'logs': logs_text
+            },
+            headers={'Access-Control-Allow-Origin': '*'}
+        )
+    except Exception as e:
+        logger.error(f"Error reading logs: {e}", exc_info=True)
+        return web.json_response(
+            {
+                'success': False,
+                'error': str(e)
+            },
+            status=500,
+            headers={'Access-Control-Allow-Origin': '*'}
+        )
 
 
 async def get_payment_info_api(request):
