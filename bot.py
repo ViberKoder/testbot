@@ -302,15 +302,40 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     logger.info(f"Inline query received: '{query}' (original: '{update.inline_query.query}')")
     
-    # Определяем тип яйца: обычное или multi (до 50 вылуплений)
-    is_multi = "multi" in query or "megg" in query
-    max_hatches = 50 if is_multi else 1
+    # Парсим запрос: "egg" или "egg N" где N от 2 до 1000
+    is_multi = False
+    max_hatches = 1
     
-    # Показываем результат если запрос пустой или содержит "egg" или "multi" или "megg"
-    if query and "egg" not in query and "multi" not in query and "megg" not in query:
-        logger.info(f"Query '{query}' doesn't contain 'egg', 'multi' or 'megg', returning empty results")
+    # Проверяем, содержит ли запрос "egg"
+    if "egg" not in query:
+        logger.info(f"Query '{query}' doesn't contain 'egg', returning empty results")
         await update.inline_query.answer([], cache_time=1)
         return
+    
+    # Пытаемся извлечь число после "egg"
+    # Форматы: "egg", "egg 50", "egg50", "egg 350", и т.д.
+    import re
+    egg_match = re.search(r'egg\s*(\d+)', query)
+    if egg_match:
+        hatch_count = int(egg_match.group(1))
+        # Multi egg от 2 до 1000 вылуплений
+        if 2 <= hatch_count <= 1000:
+            is_multi = True
+            max_hatches = hatch_count
+            logger.info(f"Multi egg requested with {max_hatches} hatches")
+        elif hatch_count == 1:
+            # Явно указано 1 - обычное яйцо
+            is_multi = False
+            max_hatches = 1
+        else:
+            # Число вне диапазона - используем обычное яйцо
+            logger.warning(f"Hatch count {hatch_count} is out of range (2-1000), using regular egg")
+            is_multi = False
+            max_hatches = 1
+    else:
+        # Просто "egg" без числа - обычное яйцо
+        is_multi = False
+        max_hatches = 1
     
     # Получаем ID отправителя
     sender_id = update.inline_query.from_user.id
@@ -364,29 +389,25 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.warning(f"Callback data still too long, using timestamp-based egg_id: {egg_id}")
     
     # Создаем кнопку "Hatch"
-    # Для multi egg используем Web App кнопку, которая показывает индивидуальный статус
     if is_multi:
-        # Web App кнопка для multi egg - каждый пользователь видит свой статус
-        web_app_url = f"{MINI_APP_URL}/egg-status?egg_key={egg_key}"
-        keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("🥚🥚 Hatch Multi Egg", callback_data=callback_data),
-                InlineKeyboardButton("👁️ My Status", web_app=WebAppInfo(url=web_app_url))
-            ]
-        ])
+        button_text = f"🥚🥚 Hatch Multi Egg ({max_hatches}x)"
     else:
         button_text = "🥚 Hatch"
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton(button_text, callback_data=callback_data)]
-        ])
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(button_text, callback_data=callback_data)]
+    ])
     
     # Безлимитный режим - всегда разрешаем отправку яиц
     # Проверяем ежедневный лимит только для статистики (не блокируем)
     can_send_free, daily_count, total_limit = check_daily_limit(sender_id)
     
     # Создаем результат с эмодзи яйца (безлимит)
-    title = "🥚 Send Egg" if not is_multi else "🥚🥚 Send Multi Egg (50x)"
-    description = "Click to send an egg to the chat" if not is_multi else "Multi egg - up to 50 users can hatch it!"
+    if is_multi:
+        title = f"🥚🥚 Send Multi Egg ({max_hatches}x)"
+        description = f"Multi egg - up to {max_hatches} users can hatch it!"
+    else:
+        title = "🥚 Send Egg"
+        description = "Click to send an egg to the chat"
     results = [
         InlineQueryResultArticle(
             id=egg_id,
