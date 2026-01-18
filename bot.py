@@ -80,7 +80,8 @@ def load_data():
                     'referrers': data.get('referrers', {}),  # {user_id: referrer_id} - кто привел пользователя
                     'referral_earnings': data.get('referral_earnings', {}),  # {referrer_id: total_earned} - сколько заработал рефовод
                     'ton_payments': data.get('ton_payments', {}),  # {user_id: [{'date': '2024-01-01', 'amount': 0.1, 'tx_hash': '...'}]}
-                    'eggs_detail': data.get('eggs_detail', {})  # {egg_key: {sender_id, egg_id, hatched_by, timestamp_sent, timestamp_hatched}}
+                    'eggs_detail': data.get('eggs_detail', {}),  # {egg_key: {sender_id, egg_id, hatched_by, timestamp_sent, timestamp_hatched, is_multi, max_hatches, hatched_count, hatched_by_list}}
+                    'multi_eggs': data.get('multi_eggs', {})  # {egg_key: {hatched_by_list: [user_id1, user_id2, ...], hatched_count: int}}
                 }
         except Exception as e:
             logger.error(f"Error loading data from {DATA_FILE}: {e}", exc_info=True)
@@ -103,7 +104,8 @@ def get_default_data():
         'referrers': {},
         'referral_earnings': {},
         'ton_payments': {},
-        'eggs_detail': {}
+        'eggs_detail': {},
+        'multi_eggs': {}
     }
 
 # Функция для сохранения данных в файл
@@ -121,7 +123,8 @@ def save_data():
             'referrers': referrers,
             'referral_earnings': referral_earnings,
             'ton_payments': ton_payments,
-            'eggs_detail': eggs_detail
+            'eggs_detail': eggs_detail,
+            'multi_eggs': multi_eggs
         }
         
         # Логируем что сохраняем
@@ -169,7 +172,8 @@ completed_tasks = data['completed_tasks']
 referrers = data.get('referrers', {})  # {user_id: referrer_id}
 referral_earnings = data.get('referral_earnings', {})  # {referrer_id: total_earned}
 ton_payments = data.get('ton_payments', {})  # {user_id: [{'date': '2024-01-01', 'amount': 0.1, 'tx_hash': '...'}]}
-eggs_detail = data.get('eggs_detail', {})  # {egg_key: {sender_id, egg_id, hatched_by, timestamp_sent, timestamp_hatched}}
+eggs_detail = data.get('eggs_detail', {})  # {egg_key: {sender_id, egg_id, hatched_by, timestamp_sent, timestamp_hatched, is_multi, max_hatches, hatched_count, hatched_by_list}}
+multi_eggs = data.get('multi_eggs', {})  # {egg_key: {hatched_by_list: [user_id1, user_id2, ...], hatched_count: int}}
 
 # Логируем загруженные данные при старте
 logger.info(f"Bot started with data: {len(egg_points)} users with points, {len(referrers)} referrers, {len(eggs_detail)} eggs in detail")
@@ -298,9 +302,13 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     logger.info(f"Inline query received: '{query}' (original: '{update.inline_query.query}')")
     
-    # Показываем результат если запрос пустой или содержит "egg"
-    if query and "egg" not in query:
-        logger.info(f"Query '{query}' doesn't contain 'egg', returning empty results")
+    # Определяем тип яйца: обычное или multi (до 50 вылуплений)
+    is_multi = "multi" in query or "megg" in query
+    max_hatches = 50 if is_multi else 1
+    
+    # Показываем результат если запрос пустой или содержит "egg" или "multi" или "megg"
+    if query and "egg" not in query and "multi" not in query and "megg" not in query:
+        logger.info(f"Query '{query}' doesn't contain 'egg', 'multi' or 'megg', returning empty results")
         await update.inline_query.answer([], cache_time=1)
         return
     
@@ -319,13 +327,24 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'egg_id': egg_id,
         'hatched_by': None,
         'timestamp_sent': datetime.now().isoformat(),
-        'timestamp_hatched': None
+        'timestamp_hatched': None,
+        'is_multi': is_multi,
+        'max_hatches': max_hatches,
+        'hatched_count': 0,
+        'hatched_by_list': []
     }
     
+    # Если это multi egg, инициализируем структуру для отслеживания вылуплений
+    if is_multi:
+        multi_eggs[egg_key] = {
+            'hatched_by_list': [],
+            'hatched_count': 0
+        }
+    
     # Сохраняем информацию об отправителе яйца
-    # Формат callback_data: hatch_{sender_id}|{egg_id}
-    # Реферал устанавливается когда кто-то открывает яйцо (открывающий становится рефералом отправителя)
-    callback_data = f"hatch_{sender_id}|{egg_id}"
+    # Формат callback_data: hatch_{sender_id}|{egg_id} или multi_{sender_id}|{egg_id} для multi egg
+    prefix = "multi" if is_multi else "hatch"
+    callback_data = f"{prefix}_{sender_id}|{egg_id}"
     
     # Проверяем длину callback_data (максимум 64 байта для Telegram)
     callback_data_bytes = len(callback_data.encode('utf-8'))
@@ -345,8 +364,9 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.warning(f"Callback data still too long, using timestamp-based egg_id: {egg_id}")
     
     # Создаем кнопку "Hatch"
+    button_text = "🥚 Hatch" if not is_multi else "🥚🥚 Multi Egg (50x)"
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🥚 Hatch", callback_data=callback_data)]
+        [InlineKeyboardButton(button_text, callback_data=callback_data)]
     ])
     
     # Безлимитный режим - всегда разрешаем отправку яиц
@@ -354,13 +374,15 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     can_send_free, daily_count, total_limit = check_daily_limit(sender_id)
     
     # Создаем результат с эмодзи яйца (безлимит)
+    title = "🥚 Send Egg" if not is_multi else "🥚🥚 Send Multi Egg (50x)"
+    description = "Click to send an egg to the chat" if not is_multi else "Multi egg - up to 50 users can hatch it!"
     results = [
         InlineQueryResultArticle(
             id=egg_id,
-            title="🥚 Send Egg",
-            description="Click to send an egg to the chat",
+            title=title,
+            description=description,
             input_message_content=InputTextMessageContent(
-                message_text="🥚",
+                message_text="🥚" if not is_multi else "🥚🥚",
                 parse_mode=ParseMode.HTML
             ),
             reply_markup=keyboard
@@ -421,14 +443,19 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     sender_id = None
     egg_id = None
+    is_multi = False
     
-    if not query.data.startswith("hatch_"):
+    # Проверяем формат callback_data: hatch_ или multi_
+    if query.data.startswith("multi_"):
+        is_multi = True
+        data_part = query.data[6:]  # 6 = len("multi_")
+    elif query.data.startswith("hatch_"):
+        is_multi = False
+        data_part = query.data[6:]  # 6 = len("hatch_")
+    else:
         await query.answer("❌ Ошибка: неверный формат данных", show_alert=True)
         logger.error(f"Invalid callback_data format: {query.data}")
         return
-    
-    # Убираем префикс "hatch_"
-    data_part = query.data[6:]  # 6 = len("hatch_")
     
     # Пробуем новый формат: sender_id|egg_id
     if "|" in data_part:
@@ -465,17 +492,21 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Could not parse callback_data: {query.data}")
         return
     
-    logger.info(f"Egg ID: {egg_id}, Sender ID: {sender_id}, Clicker ID: {clicker_id}")
+    logger.info(f"Egg ID: {egg_id}, Sender ID: {sender_id}, Clicker ID: {clicker_id}, Is Multi: {is_multi}")
     
     # Создаем уникальный ключ для яйца (комбинация sender_id и egg_id)
     # Это предотвращает коллизии при укорачивании UUID
     egg_key = f"{sender_id}_{egg_id}"
     
-    # Проверяем, не было ли уже вылуплено это яйцо
-    if egg_key in hatched_eggs:
-        await query.answer("🐣 This egg has already hatched!", show_alert=True)
-        logger.info(f"Egg {egg_key} already hatched")
-        return
+    # Получаем информацию о яйце из eggs_detail
+    egg_info = eggs_detail.get(egg_key, {})
+    if not egg_info:
+        # Если информации нет, определяем тип по префиксу callback_data
+        egg_info = {'is_multi': is_multi, 'max_hatches': 50 if is_multi else 1}
+    
+    # Определяем, является ли яйцо multi egg
+    is_multi_egg = egg_info.get('is_multi', is_multi)
+    max_hatches = egg_info.get('max_hatches', 50 if is_multi_egg else 1)
     
     # ВАЖНО: Проверяем, не пытается ли отправитель вылупить свое яйцо
     # Это должно быть ПЕРЕД любым изменением сообщения
@@ -484,23 +515,72 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info(f"BLOCKED: Sender {sender_id} tried to hatch their own egg {egg_id}")
         return
     
-    # Если все проверки пройдены, вылупляем яйцо
-    # Помечаем яйцо как вылупленное СРАЗУ, чтобы предотвратить двойное вылупление
-    # Используем egg_key (комбинация sender_id и egg_id) для уникальности
-    hatched_eggs.add(egg_key)
-    
-    # Обновляем детальную информацию о яйце для Eggchain Explorer
-    if egg_key not in eggs_detail:
-        eggs_detail[egg_key] = {
-            'sender_id': sender_id,
-            'egg_id': egg_id,
-            'hatched_by': clicker_id,
-            'timestamp_sent': datetime.now().isoformat(),
-            'timestamp_hatched': datetime.now().isoformat()
-        }
+    # Для multi egg проверяем лимит и дубликаты
+    if is_multi_egg:
+        # Проверяем, не вылуплял ли уже этот пользователь это яйцо
+        multi_egg_data = multi_eggs.get(egg_key, {'hatched_by_list': [], 'hatched_count': 0})
+        if clicker_id in multi_egg_data['hatched_by_list']:
+            await query.answer("🐣 You have already hatched this multi egg!", show_alert=True)
+            logger.info(f"User {clicker_id} already hatched multi egg {egg_key}")
+            return
+        
+        # Проверяем лимит вылуплений
+        if multi_egg_data['hatched_count'] >= max_hatches:
+            await query.answer(f"🐣 This multi egg has reached its limit of {max_hatches} hatches!", show_alert=True)
+            logger.info(f"Multi egg {egg_key} reached limit of {max_hatches} hatches")
+            return
+        
+        # Добавляем пользователя в список вылупивших
+        multi_egg_data['hatched_by_list'].append(clicker_id)
+        multi_egg_data['hatched_count'] += 1
+        multi_eggs[egg_key] = multi_egg_data
+        
+        # Обновляем eggs_detail
+        if egg_key not in eggs_detail:
+            eggs_detail[egg_key] = {
+                'sender_id': sender_id,
+                'egg_id': egg_id,
+                'hatched_by': None,  # Для multi egg храним список в multi_eggs
+                'timestamp_sent': datetime.now().isoformat(),
+                'timestamp_hatched': datetime.now().isoformat(),
+                'is_multi': True,
+                'max_hatches': max_hatches,
+                'hatched_count': multi_egg_data['hatched_count'],
+                'hatched_by_list': multi_egg_data['hatched_by_list'].copy()
+            }
+        else:
+            eggs_detail[egg_key]['hatched_count'] = multi_egg_data['hatched_count']
+            eggs_detail[egg_key]['hatched_by_list'] = multi_egg_data['hatched_by_list'].copy()
+            if eggs_detail[egg_key]['hatched_count'] == 1:
+                eggs_detail[egg_key]['timestamp_hatched'] = datetime.now().isoformat()
     else:
-        eggs_detail[egg_key]['hatched_by'] = clicker_id
-        eggs_detail[egg_key]['timestamp_hatched'] = datetime.now().isoformat()
+        # Обычное яйцо - проверяем, не было ли уже вылуплено
+        if egg_key in hatched_eggs:
+            await query.answer("🐣 This egg has already hatched!", show_alert=True)
+            logger.info(f"Egg {egg_key} already hatched")
+            return
+        
+        # Помечаем яйцо как вылупленное
+        hatched_eggs.add(egg_key)
+        
+        # Обновляем детальную информацию о яйце для Eggchain Explorer
+        if egg_key not in eggs_detail:
+            eggs_detail[egg_key] = {
+                'sender_id': sender_id,
+                'egg_id': egg_id,
+                'hatched_by': clicker_id,
+                'timestamp_sent': datetime.now().isoformat(),
+                'timestamp_hatched': datetime.now().isoformat(),
+                'is_multi': False,
+                'max_hatches': 1,
+                'hatched_count': 1,
+                'hatched_by_list': [clicker_id]
+            }
+        else:
+            eggs_detail[egg_key]['hatched_by'] = clicker_id
+            eggs_detail[egg_key]['timestamp_hatched'] = datetime.now().isoformat()
+            eggs_detail[egg_key]['hatched_count'] = 1
+            eggs_detail[egg_key]['hatched_by_list'] = [clicker_id]
     
     # РЕФЕРАЛЬНАЯ СИСТЕМА: Если clicker_id еще не имеет реферала, устанавливаем sender_id как его реферала
     # Когда кто-то открывает яйцо, он становится рефералом того, кто отправил яйцо
