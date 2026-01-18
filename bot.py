@@ -534,11 +534,17 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     egg_info = eggs_detail.get(egg_key, {})
     if not egg_info:
         # Если информации нет, определяем тип по префиксу callback_data
-        egg_info = {'is_multi': is_multi, 'max_hatches': 50 if is_multi else 1}
+        # Для multi используем значение из callback или дефолт 50
+        default_max = 50 if is_multi else 1
+        egg_info = {'is_multi': is_multi, 'max_hatches': default_max}
     
-    # Определяем, является ли яйцо multi egg
+    # Определяем, является ли яйцо multi egg и максимальное количество вылуплений
     is_multi_egg = egg_info.get('is_multi', is_multi)
-    max_hatches = egg_info.get('max_hatches', 50 if is_multi_egg else 1)
+    max_hatches = egg_info.get('max_hatches', 1)
+    
+    # Если это multi egg, но max_hatches не установлен, используем значение из egg_info или дефолт
+    if is_multi_egg and max_hatches == 1:
+        max_hatches = egg_info.get('max_hatches', 50)  # Дефолт для старых multi eggs
     
     # ВАЖНО: Проверяем, не пытается ли отправитель вылупить свое яйцо
     # Это должно быть ПЕРЕД любым изменением сообщения
