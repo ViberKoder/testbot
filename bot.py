@@ -1022,14 +1022,31 @@ async def stats_api(request):
     referrer_id = referrers.get(user_id)
     
     # Count referrals (users who have this user as referrer)
-    referrals_count = sum(1 for ref_user_id, ref_referrer_id in referrers.items() if ref_referrer_id == user_id)
+    # Убеждаемся, что user_id - это int для правильного сравнения
+    user_id_int = int(user_id)
+    
+    # Подсчитываем рефералов - ищем всех пользователей, у которых referrer_id == user_id
+    referrals_list = []
+    for ref_user_id, ref_referrer_id in referrers.items():
+        # Убеждаемся, что оба значения - int
+        try:
+            ref_referrer_id_int = int(ref_referrer_id)
+            if ref_referrer_id_int == user_id_int:
+                referrals_list.append(int(ref_user_id))
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Invalid referrer entry in dict: {ref_user_id} -> {ref_referrer_id}, error: {e}")
+            continue
+    
+    referrals_count = len(referrals_list)
     
     # Логируем для отладки
-    logger.info(f"API stats for user {user_id}: referrals_count={referrals_count}, total_referrers_dict_size={len(referrers)}")
+    logger.info(f"API stats for user {user_id_int} (type: {type(user_id_int)}): referrals_count={referrals_count}, total_referrers_dict_size={len(referrers)}")
     if referrals_count > 0:
         # Показываем примеры рефералов
-        sample_referrals = [ref_user_id for ref_user_id, ref_referrer_id in referrers.items() if ref_referrer_id == user_id][:3]
-        logger.info(f"Sample referrals for user {user_id}: {sample_referrals}")
+        logger.info(f"Sample referrals for user {user_id_int}: {referrals_list[:5]}")
+    else:
+        # Если рефералов нет, показываем все записи для отладки
+        logger.info(f"No referrals found for user {user_id_int}. All referrers dict: {list(referrers.items())[:10]}")
     
     # Calculate available eggs (10 free per day + paid eggs - sent today)
     # Paid eggs сохраняются между днями, сбрасывается только daily_sent
