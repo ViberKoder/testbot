@@ -1,0 +1,390 @@
+"""
+API endpoints для Eggchain Explorer
+Работает с JSON файлом bot_data.json
+"""
+
+from aiohttp import web
+import json
+import os
+from datetime import datetime
+
+# Глобальная переменная для доступа к боту (будет установлена из bot.py)
+bot_instance = None
+
+def set_bot_instance(bot):
+    """Устанавливает экземпляр бота для получения информации о пользователях"""
+    global bot_instance
+    bot_instance = bot
+
+async def get_user_info(user_id):
+    """Получает информацию о пользователе из Telegram"""
+    if not bot_instance:
+        return None, None, None
+    
+    try:
+        user = await bot_instance.get_chat(user_id)
+        username = user.username if hasattr(user, 'username') and user.username else None
+        first_name = user.first_name if hasattr(user, 'first_name') else None
+        
+        # Получаем фото профиля
+        avatar_file_id = None
+        avatar_url = None
+        try:
+            photos = await bot_instance.get_user_profile_photos(user_id, limit=1)
+            if photos and photos.total_count > 0:
+                avatar_file_id = photos.photos[0][0].file_id
+                # Получаем URL файла
+                file = await bot_instance.get_file(avatar_file_id)
+                # Формируем полный URL для доступа к файлу
+                avatar_url = f"https://api.telegram.org/file/bot{bot_instance.token}/{file.file_path}"
+        except:
+            pass
+        
+        return username, avatar_file_id, avatar_url
+    except Exception as e:
+        return None, None, None
+
+# Путь к файлу данных (должен совпадать с bot.py)
+DATA_FILE = os.getenv('DATA_FILE', 'bot_data.json')
+
+def load_data():
+    """Загружает данные из JSON файла"""
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            return {}
+    return {}
+
+def add_cors_headers(response):
+    """Добавляет CORS заголовки к ответу"""
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    return response
+
+async def get_egg_by_id(request):
+    """
+    GET /api/egg/{egg_id}
+    Возвращает информацию о конкретном яйце
+    Формат egg_id: {sender_id}_{egg_id} или просто {egg_id}
+    """
+    # Обработка OPTIONS запроса для CORS
+    if request.method == 'OPTIONS':
+        response = web.Response()
+        return add_cors_headers(response)
+    
+    egg_id_param = request.match_info.get('egg_id')
+    
+    if not egg_id_param:
+        response = web.json_response({'error': 'Egg ID is required'}, status=400)
+        return add_cors_headers(response)
+    
+    try:
+        data = load_data()
+        
+        # Получаем детальную информацию о яйцах
+        eggs_detail = data.get('eggs_detail', {})  # {egg_key: {sender_id, egg_id, hatched_by, timestamp_sent, timestamp_hatched}}
+        hatched_eggs = set(data.get('hatched_eggs', []))
+        
+        # Ищем яйцо в eggs_detail
+        egg_info = None
+        egg_key = None
+        
+        # Сначала пробуем найти по полному ключу (sender_id_egg_id)
+        if egg_id_param in eggs_detail:
+            egg_key = egg_id_param
+            egg_info = eggs_detail[egg_key]
+        else:
+            # Ищем по частичному совпадению (только egg_id)
+            for key, info in eggs_detail.items():
+                if info.get('egg_id') == egg_id_param:
+                    egg_key = key
+                    egg_info = info
+                    break
+        
+        # Если не нашли в детальной информации, пробуем восстановить из hatched_eggs
+        if not egg_info:
+            # Ищем в hatched_eggs по формату sender_id_egg_id
+            if egg_id_param in hatched_eggs:
+                parts = egg_id_param.split('_', 1)
+                if len(parts) == 2:
+                    sender_id = int(parts[0])
+                    egg_id = parts[1]
+                    egg_info = {
+                        'sender_id': sender_id,
+                        'egg_id': egg_id,
+                        'hatched_by': None,  # Не знаем, кто вылупил
+                        'timestamp_sent': None,
+                        'timestamp_hatched': None
+                    }
+                    egg_key = egg_id_param
+            else:
+                # Пробуем найти по egg_id в hatched_eggs
+                for egg_key_candidate in hatched_eggs:
+                    if egg_key_candidate.endswith(f'_{egg_id_param}'):
+                        parts = egg_key_candidate.split('_', 1)
+                        if len(parts) == 2:
+                            sender_id = int(parts[0])
+                            egg_id = parts[1]
+                            egg_info = {
+                                'sender_id': sender_id,
+                                'egg_id': egg_id,
+                                'hatched_by': None,
+                                'timestamp_sent': None,
+                                'timestamp_hatched': None
+                            }
+                            egg_key = egg_key_candidate
+                            break
+        
+        if not egg_info:
+            response = web.json_response({'error': 'Egg not found'}, status=404)
+            return add_cors_headers(response)
+        
+        sender_id = egg_info.get('sender_id')
+        egg_id = egg_info.get('egg_id', egg_id_param)
+        hatched_by = egg_info.get('hatched_by')
+        timestamp_sent = egg_info.get('timestamp_sent')
+        timestamp_hatched = egg_info.get('timestamp_hatched')
+        
+        # Проверяем, вылуплено ли яйцо
+        is_hatched = egg_key in hatched_eggs if egg_key else False
+        
+        # Если вылуплено, но hatched_by не указан, пытаемся найти из других источников
+        if is_hatched and not hatched_by:
+            # Можно попробовать найти из других данных, но для простоты оставляем None
+            pass
+        
+        # Получаем информацию о пользователях
+        sender_username, sender_avatar_file, sender_avatar_url = await get_user_info(sender_id) if sender_id else (None, None, None)
+        hatched_by_username, hatched_by_avatar_file, hatched_by_avatar_url = await get_user_info(hatched_by) if hatched_by else (None, None, None)
+        
+        result = {
+            'egg_id': egg_id,
+            'sender_id': sender_id,
+            'sender_username': sender_username,
+            'sender_avatar': sender_avatar_url,
+            'recipient_id': None,
+            'hatched_by': hatched_by,
+            'hatched_by_username': hatched_by_username,
+            'hatched_by_avatar': hatched_by_avatar_url,
+            'timestamp_sent': timestamp_sent,
+            'timestamp_hatched': timestamp_hatched,
+            'status': 'hatched' if is_hatched else 'pending'
+        }
+        
+        response = web.json_response(result)
+        return add_cors_headers(response)
+        
+    except Exception as e:
+        response = web.json_response({'error': str(e)}, status=500)
+        return add_cors_headers(response)
+
+async def get_user_eggs(request):
+    """
+    GET /api/user/{user_id}/eggs
+    Возвращает список всех яиц, отправленных пользователем
+    """
+    # Обработка OPTIONS запроса для CORS
+    if request.method == 'OPTIONS':
+        response = web.Response()
+        return add_cors_headers(response)
+    
+    user_id_param = request.match_info.get('user_id')
+    
+    if not user_id_param:
+        response = web.json_response({'error': 'User ID is required'}, status=400)
+        return add_cors_headers(response)
+    
+    try:
+        user_id = int(user_id_param)
+    except ValueError:
+        response = web.json_response({'error': 'Invalid user ID'}, status=400)
+        return add_cors_headers(response)
+    
+    try:
+        data = load_data()
+        
+        # Получаем детальную информацию о яйцах
+        eggs_detail = data.get('eggs_detail', {})
+        hatched_eggs = set(data.get('hatched_eggs', []))
+        
+        # Находим все яйца, отправленные этим пользователем
+        user_eggs = []
+        for egg_key, egg_info in eggs_detail.items():
+            if egg_info.get('sender_id') == user_id:
+                egg_id = egg_info.get('egg_id', egg_key.split('_', 1)[1] if '_' in egg_key else egg_key)
+                is_hatched = egg_key in hatched_eggs
+                hatched_by = egg_info.get('hatched_by')
+                
+                # Получаем информацию о том, кто вылупил
+                hatched_by_username, hatched_by_avatar_file, hatched_by_avatar_url = await get_user_info(hatched_by) if hatched_by else (None, None, None)
+                
+                user_eggs.append({
+                    'egg_id': egg_id,
+                    'sender_id': user_id,
+                    'recipient_id': None,
+                    'hatched_by': hatched_by,
+                    'hatched_by_username': hatched_by_username,
+                    'hatched_by_avatar': hatched_by_avatar_url,
+                    'timestamp_sent': egg_info.get('timestamp_sent'),
+                    'timestamp_hatched': egg_info.get('timestamp_hatched'),
+                    'status': 'hatched' if is_hatched else 'pending'
+                })
+        
+        # Также проверяем hatched_eggs для яиц, которых нет в eggs_detail
+        for egg_key in hatched_eggs:
+            if egg_key.startswith(f'{user_id}_'):
+                # Проверяем, нет ли уже этого яйца в списке
+                egg_id = egg_key.split('_', 1)[1] if '_' in egg_key else egg_key
+                if not any(e['egg_id'] == egg_id for e in user_eggs):
+                    user_eggs.append({
+                        'egg_id': egg_id,
+                        'sender_id': user_id,
+                        'recipient_id': None,
+                        'hatched_by': None,
+                        'hatched_by_username': None,
+                        'timestamp_sent': None,
+                        'timestamp_hatched': None,
+                        'status': 'hatched'
+                    })
+        
+        # Сортируем по timestamp_sent (новые сначала)
+        user_eggs.sort(key=lambda x: x.get('timestamp_sent') or '', reverse=True)
+        
+        response = web.json_response({'eggs': user_eggs})
+        return add_cors_headers(response)
+        
+    except Exception as e:
+        response = web.json_response({'error': str(e)}, status=500)
+        return add_cors_headers(response)
+
+async def get_user_by_username(request):
+    """
+    GET /api/user/username/{username}
+    Возвращает информацию о пользователе и его яйцах по username
+    """
+    if request.method == 'OPTIONS':
+        response = web.Response()
+        return add_cors_headers(response)
+    
+    username = request.match_info.get('username')
+    if not username:
+        response = web.json_response({'error': 'Username is required'}, status=400)
+        return add_cors_headers(response)
+    
+    # Убираем @ если есть
+    username = username.lstrip('@')
+    
+    try:
+        if not bot_instance:
+            response = web.json_response({'error': 'Bot instance not available'}, status=500)
+            return add_cors_headers(response)
+        
+        # Пробуем найти пользователя через поиск в чатах
+        # Но в Bot API нет прямого поиска по username, поэтому нужно использовать другой подход
+        # Можно попробовать через get_chat, но это работает только если бот знает пользователя
+        
+        # Альтернативный подход: ищем в eggs_detail всех пользователей с таким username
+        data = load_data()
+        eggs_detail = data.get('eggs_detail', {})
+        hatched_eggs = set(data.get('hatched_eggs', []))
+        
+        # Собираем всех уникальных user_id из яиц
+        user_ids_found = set()
+        for egg_info in eggs_detail.values():
+            sender_id = egg_info.get('sender_id')
+            hatched_by = egg_info.get('hatched_by')
+            if sender_id:
+                user_ids_found.add(sender_id)
+            if hatched_by:
+                user_ids_found.add(hatched_by)
+        
+        # Проверяем каждого пользователя на совпадение username
+        target_user_id = None
+        target_username = None
+        target_avatar = None
+        
+        for user_id in user_ids_found:
+            try:
+                user_username, _, user_avatar = await get_user_info(user_id)
+                if user_username and user_username.lower() == username.lower():
+                    target_user_id = user_id
+                    target_username = user_username
+                    target_avatar = user_avatar
+                    break
+            except:
+                continue
+        
+        if not target_user_id:
+            response = web.json_response({'error': 'User not found'}, status=404)
+            return add_cors_headers(response)
+        
+        # Получаем все яйца пользователя
+        user_eggs_sent = []
+        user_eggs_hatched = []
+        
+        for egg_key, egg_info in eggs_detail.items():
+            sender_id = egg_info.get('sender_id')
+            hatched_by = egg_info.get('hatched_by')
+            egg_id = egg_info.get('egg_id', egg_key.split('_', 1)[1] if '_' in egg_key else egg_key)
+            is_hatched = egg_key in hatched_eggs
+            
+            if sender_id == target_user_id:
+                hatched_by_username, _, hatched_by_avatar = await get_user_info(hatched_by) if hatched_by else (None, None, None)
+                user_eggs_sent.append({
+                    'egg_id': egg_id,
+                    'sender_id': target_user_id,
+                    'hatched_by': hatched_by,
+                    'hatched_by_username': hatched_by_username,
+                    'hatched_by_avatar': hatched_by_avatar,
+                    'timestamp_sent': egg_info.get('timestamp_sent'),
+                    'timestamp_hatched': egg_info.get('timestamp_hatched'),
+                    'status': 'hatched' if is_hatched else 'pending'
+                })
+            
+            if hatched_by == target_user_id:
+                sender_username, _, sender_avatar = await get_user_info(sender_id) if sender_id else (None, None, None)
+                user_eggs_hatched.append({
+                    'egg_id': egg_id,
+                    'sender_id': sender_id,
+                    'sender_username': sender_username,
+                    'sender_avatar': sender_avatar,
+                    'timestamp_sent': egg_info.get('timestamp_sent'),
+                    'timestamp_hatched': egg_info.get('timestamp_hatched'),
+                    'status': 'hatched'
+                })
+        
+        # Сортируем по дате
+        user_eggs_sent.sort(key=lambda x: x.get('timestamp_sent') or '', reverse=True)
+        user_eggs_hatched.sort(key=lambda x: x.get('timestamp_hatched') or '', reverse=True)
+        
+        result = {
+            'user_id': target_user_id,
+            'username': target_username,
+            'avatar': target_avatar,
+            'eggs_sent': user_eggs_sent,
+            'eggs_hatched': user_eggs_hatched,
+            'total_sent': len(user_eggs_sent),
+            'total_hatched': len(user_eggs_hatched)
+        }
+        
+        response = web.json_response(result)
+        return add_cors_headers(response)
+        
+    except Exception as e:
+        response = web.json_response({'error': str(e)}, status=500)
+        return add_cors_headers(response)
+
+def setup_eggchain_routes(app):
+    """
+    Добавляет роуты для Eggchain Explorer в aiohttp приложение
+    Использование: setup_eggchain_routes(app) в вашем bot.py
+    """
+    app.router.add_get('/api/egg/{egg_id}', get_egg_by_id)
+    app.router.add_options('/api/egg/{egg_id}', get_egg_by_id)
+    app.router.add_get('/api/user/{user_id}/eggs', get_user_eggs)
+    app.router.add_options('/api/user/{user_id}/eggs', get_user_eggs)
+    app.router.add_get('/api/user/username/{username}', get_user_by_username)
+    app.router.add_options('/api/user/username/{username}', get_user_by_username)
