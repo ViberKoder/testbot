@@ -318,8 +318,8 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     egg_match = re.search(r'egg\s*(\d+)', query)
     if egg_match:
         hatch_count = int(egg_match.group(1))
-        # Multi egg от 2 до 1000 вылуплений
-        if 2 <= hatch_count <= 1000:
+        # Multi egg от 2 до 30 вылуплений
+        if 2 <= hatch_count <= 30:
             is_multi = True
             max_hatches = hatch_count
             logger.info(f"Multi egg requested with {max_hatches} hatches")
@@ -329,7 +329,7 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             max_hatches = 1
         else:
             # Число вне диапазона - используем обычное яйцо
-            logger.warning(f"Hatch count {hatch_count} is out of range (2-1000), using regular egg")
+            logger.warning(f"Hatch count {hatch_count} is out of range (2-30), using regular egg")
             is_multi = False
             max_hatches = 1
     else:
