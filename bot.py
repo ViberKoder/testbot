@@ -694,7 +694,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Для multi egg показываем прогресс во всплывающем уведомлении и отправляем ЛС
     if is_multi_egg:
-        multi_egg_data = multi_eggs.get(egg_key, {'hatched_count': 0})
+        # Получаем актуальные данные после обновления
+        multi_egg_data = multi_eggs.get(egg_key, {'hatched_count': 0, 'hatched_by_list': []})
         hatched_count = multi_egg_data['hatched_count']
         remaining = max_hatches - hatched_count
         
@@ -703,6 +704,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer(answer_text)
         
         # Отправляем личное сообщение пользователю, который вылупил яйцо
+        # Делаем это ДО обновления сообщения, чтобы гарантировать отправку
         try:
             # Создаем кнопки для ЛС сообщения
             ls_keyboard = InlineKeyboardMarkup([
@@ -723,11 +725,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text="🐣",
                 reply_markup=ls_keyboard
             )
-            logger.info(f"Sent personal message to user {clicker_id} after hatching multi egg {egg_key}")
+            logger.info(f"Sent personal message to user {clicker_id} after hatching multi egg {egg_key} ({hatched_count}/{max_hatches})")
         except Exception as e:
-            logger.error(f"Failed to send personal message to user {clicker_id}: {e}")
+            logger.error(f"Failed to send personal message to user {clicker_id}: {e}", exc_info=True)
         
-        # Обновляем только кнопку с прогрессом, сообщение остается с яйцом
+        # Обновляем сообщение в чате
         try:
             if remaining > 0:
                 # Если еще можно вылупить, обновляем кнопку с прогрессом
@@ -738,11 +740,27 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 # Сообщение остается просто с яйцом, не меняем текст
                 await query.edit_message_reply_markup(reply_markup=keyboard)
             else:
-                # Если лимит достигнут, убираем кнопку
-                keyboard = InlineKeyboardMarkup([])
-                await query.edit_message_reply_markup(reply_markup=keyboard)
+                # Если лимит достигнут, меняем эмодзи на 🐣 и добавляем кнопки
+                keyboard = InlineKeyboardMarkup([
+                    [
+                        InlineKeyboardButton(
+                            "📱 Hatch App",
+                            url="https://t.me/ToHatchBot/app"
+                        ),
+                        InlineKeyboardButton(
+                            "Send 🥚",
+                            switch_inline_query_current_chat="egg"
+                        )
+                    ]
+                ])
+                # Меняем эмодзи с 🥚 на 🐣
+                await query.edit_message_text(
+                    "🐣",
+                    reply_markup=keyboard
+                )
+                logger.info(f"Multi egg {egg_key} completed ({hatched_count}/{max_hatches}), changed emoji to 🐣")
         except Exception as e:
-            logger.error(f"Error updating multi egg button: {e}")
+            logger.error(f"Error updating multi egg message: {e}", exc_info=True)
     else:
         await query.answer("🐣 Hatching egg...")
         
