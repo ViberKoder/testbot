@@ -1434,6 +1434,8 @@ def main():
             app.router.add_options('/api/ton/verify_payment', verify_ton_payment_api)
             # Добавляем роуты для Eggchain Explorer
             setup_eggchain_routes(app)
+            # Добавляем роут для чтения логов
+            app.router.add_get('/api/logs', get_logs_api)
             runner = web.AppRunner(app)
             await runner.setup()
             site = web.TCPSite(runner, '0.0.0.0', port)
